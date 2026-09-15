@@ -1,0 +1,7 @@
+﻿venv/
+__pycache__/
+*.pyc
+.system_generated/
+high_accuracy_dataset/
+dataset/
+*.pth
