@@ -22,23 +22,31 @@ st.markdown("""
         font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     }
     .stApp { background-color: #0B0F17; color: #F8FAFC; }
-    #MainMenu, footer, header {visibility: hidden;}
-    .block-container { padding-top: 1.8rem; padding-bottom: 2rem; max-width: 1150px; }
+    #MainMenu, footer {visibility: hidden;}
+    .block-container { padding-top: 1.5rem; padding-bottom: 2rem; max-width: 1150px; }
     
     .hero-container {
         background: linear-gradient(135deg, #111827 0%, #1E293B 100%);
         border: 1px solid #334155; border-radius: 16px;
-        padding: 24px 28px; margin-bottom: 20px;
+        padding: 22px 26px; margin-bottom: 18px;
         box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
     }
     .hero-badge {
         display: inline-block; background: rgba(59, 130, 246, 0.15);
         color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.3);
         border-radius: 20px; padding: 4px 12px; font-size: 0.78rem;
-        font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 8px;
+        font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 6px;
     }
     .hero-title { font-size: 2.1rem; font-weight: 800; letter-spacing: -0.02em; color: #FFFFFF; margin-bottom: 4px; }
     .hero-subtitle { font-size: 0.95rem; color: #94A3B8; line-height: 1.5; }
+    
+    .control-box {
+        background: rgba(17, 24, 39, 0.9);
+        border: 1px solid #334155;
+        border-radius: 14px;
+        padding: 16px 20px;
+        margin-bottom: 20px;
+    }
     
     .result-card-real {
         background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(6, 78, 59, 0.25) 100%);
@@ -54,7 +62,7 @@ st.markdown("""
     .channel-badge {
         display: inline-block; background: rgba(245, 158, 11, 0.15);
         color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.3);
-        border-radius: 8px; padding: 4px 10px; font-size: 0.76rem; font-weight: 600; margin-top: 6px;
+        border-radius: 8px; padding: 4px 10px; font-size: 0.78rem; font-weight: 600; margin-top: 6px;
     }
     
     .metric-card {
@@ -80,45 +88,34 @@ st.markdown("""
 # =========================================================================
 
 def apply_channel_degradation(y, sr, channel_mode):
-    """
-    Simulates real-world acoustic transmission channel distortion.
-    Evaluators test robustness under noisy / lossy channels.
-    """
-    if channel_mode == "WhatsApp Voice Note (Opus 16kbps Simulation)":
-        # WhatsApp uses Opus codec: lossy compression with low-pass roll-off at ~7.5kHz + quantization noise
+    if "WhatsApp" in channel_mode:
         nyq = 0.5 * sr
         cutoff = min(7500.0, nyq - 100.0)
         b, a = signal.butter(4, cutoff / nyq, btype='low')
         y_filt = signal.filtfilt(b, a, y)
-        # Quantization / bit-rate reduction simulation
         quant_levels = 256.0
         y_filt = np.round(y_filt * quant_levels) / quant_levels
-        # High-frequency lossy compression noise floor
         y_filt += 0.003 * np.random.normal(0, 1, len(y_filt))
         return y_filt.astype(np.float32)
 
-    elif channel_mode == "Cellular Phone Call (8kHz GSM / PSTN Bandpass)":
-        # GSM / 2G/3G Narrowband Bandpass: 300Hz - 3400Hz
+    elif "Phone Call" in channel_mode:
         nyq = 0.5 * sr
         low = 300.0 / nyq
         high = min(3400.0 / nyq, 0.95)
         b, a = signal.butter(3, [low, high], btype='band')
         y_filt = signal.filtfilt(b, a, y)
-        # Cellular microphone carbon/codec distortion
         y_filt = np.tanh(y_filt * 1.3) * 0.8
-        # Telephony static noise
         y_filt += 0.005 * np.random.normal(0, 1, len(y_filt))
         return y_filt.astype(np.float32)
 
-    elif channel_mode == "Ambient Room & Street Noise":
-        # Adds room reverberation and street static noise floor (-30 dB)
+    elif "Ambient" in channel_mode:
         noise = np.random.normal(0, 1, len(y))
         b, a = signal.butter(2, 2000.0 / (0.5 * sr), btype='low')
         noise_colored = signal.filtfilt(b, a, noise)
         y_noisy = y + 0.02 * (noise_colored / (np.max(np.abs(noise_colored)) + 1e-6))
         return (y_noisy / (np.max(np.abs(y_noisy)) + 1e-6) * 0.85).astype(np.float32)
 
-    return y.astype(np.float32)  # Clean Studio / Raw input
+    return y.astype(np.float32)
 
 
 # =========================================================================
@@ -131,7 +128,6 @@ LANGUAGE_ACOUSTIC_PROFILES = {
         "pitch_std_min": 45.0,
         "entropy_std_threshold": 0.38,
         "hpr_threshold": 1.25,
-        "aspiration_weight": 1.2,
         "note": "Calibrated for aspirated stops (ख, घ, छ, झ) & glottal pulse variations."
     },
     "Marathi": {
@@ -139,7 +135,6 @@ LANGUAGE_ACOUSTIC_PROFILES = {
         "pitch_std_min": 44.0,
         "entropy_std_threshold": 0.40,
         "hpr_threshold": 1.20,
-        "aspiration_weight": 1.1,
         "note": "Optimized for dental-retroflex shifts and distinct lateral consonant (ळ)."
     },
     "Tamil": {
@@ -147,7 +142,6 @@ LANGUAGE_ACOUSTIC_PROFILES = {
         "pitch_std_min": 40.0,
         "entropy_std_threshold": 0.42,
         "hpr_threshold": 1.15,
-        "aspiration_weight": 0.9,
         "note": "Adjusted for Dravidian syllable-timed cadences and retroflex resonance (ழ, ள)."
     },
     "Bengali": {
@@ -155,21 +149,20 @@ LANGUAGE_ACOUSTIC_PROFILES = {
         "pitch_std_min": 48.0,
         "entropy_std_threshold": 0.36,
         "hpr_threshold": 1.30,
-        "aspiration_weight": 1.3,
         "note": "Tuned for vowel rounding (অ -> ও) and nasalized micro-formant contours."
     }
 }
 
 
 # =========================================================================
-# 3. HYBRID FORENSIC & XAI (EXPLAINABLE AI) ENGINE
+# 3. HYBRID FORENSIC & XAI ENGINE
 # =========================================================================
 
 def compute_speech_authenticity_xai(audio_data, sr=16000, sensitivity=0.5, lang="Hindi", channel_mode="Clean Studio Recording"):
     features = {}
     lang_cfg = LANGUAGE_ACOUSTIC_PROFILES.get(lang, LANGUAGE_ACOUSTIC_PROFILES["Hindi"])
 
-    # 1. Pitch Jitter (Cycle-to-cycle micro-tremor in biological vocal cords)
+    # 1. Pitch Jitter
     pitches, magnitudes = librosa.piptrack(y=audio_data, sr=sr, fmin=70, fmax=400)
     pitch_seq = []
     hop_length = 512
@@ -201,19 +194,19 @@ def compute_speech_authenticity_xai(audio_data, sr=16000, sensitivity=0.5, lang=
     flatness = float(np.mean(librosa.feature.spectral_flatness(y=audio_data)))
     features["flatness"] = flatness
 
-    # 4. Spectral Entropy Variance (Vocoder Frame Phase Jumping)
+    # 4. Spectral Entropy Variance
     S = np.abs(librosa.stft(audio_data, n_fft=1024, hop_length=256))
     prob_S = S / (np.sum(S, axis=0, keepdims=True) + 1e-10)
     entropy_frames = -np.sum(prob_S * np.log2(prob_S + 1e-10), axis=0)
     entropy_std = float(np.std(entropy_frames))
     features["entropy_std"] = entropy_std
 
-    # 5. Articulation Flux / Consonant Burst Dynamics
+    # 5. Articulation Flux
     onset_env = librosa.onset.onset_strength(y=audio_data, sr=sr)
     flux = float(np.mean(onset_env))
     features["flux"] = flux
 
-    # 6. Channel Adaptation Offsets
+    # Threshold calibration
     jitter_th = lang_cfg["jitter_threshold"]
     pitch_th = lang_cfg["pitch_std_min"]
     entropy_th = lang_cfg["entropy_std_threshold"]
@@ -226,12 +219,11 @@ def compute_speech_authenticity_xai(audio_data, sr=16000, sensitivity=0.5, lang=
         hpr_th *= 1.25
         pitch_th *= 0.80
 
-    # ================= SCORE CALCULATION =================
     fake_score = 0.0
     total_w = 0.0
     xai_reasons = []
 
-    # Rule 1: Pitch Jitter Test
+    # Rule 1: Jitter
     total_w += 3.5
     if jitter < (jitter_th * 0.7):
         fake_score += 3.5 * 1.0
@@ -241,7 +233,7 @@ def compute_speech_authenticity_xai(audio_data, sr=16000, sensitivity=0.5, lang=
     else:
         fake_score += 3.5 * 0.0
 
-    # Rule 2: F0 Intonation Spread
+    # Rule 2: Pitch Std
     total_w += 3.0
     if pitch_std < pitch_th:
         fake_score += 3.0 * 1.0
@@ -251,7 +243,7 @@ def compute_speech_authenticity_xai(audio_data, sr=16000, sensitivity=0.5, lang=
     else:
         fake_score += 3.0 * 0.0
 
-    # Rule 3: Spectral Entropy Variance
+    # Rule 3: Entropy
     total_w += 3.0
     if entropy_std > entropy_th:
         fake_score += 3.0 * 1.0
@@ -261,7 +253,7 @@ def compute_speech_authenticity_xai(audio_data, sr=16000, sensitivity=0.5, lang=
     else:
         fake_score += 3.0 * 0.0
 
-    # Rule 4: HPSS Harmonic Purity Ratio
+    # Rule 4: HPSS
     total_w += 2.5
     if hpr_ratio > hpr_th:
         fake_score += 2.5 * 1.0
@@ -279,7 +271,7 @@ def compute_speech_authenticity_xai(audio_data, sr=16000, sensitivity=0.5, lang=
     else:
         confidence = float(np.clip(0.88 + (sensitivity - fake_prob) * 0.22, 0.86, 0.985))
 
-    # ================= TEMPORAL ANOMALY TIMELINE (XAI HEATMAP) =================
+    # Temporal Anomaly Heatmap
     window_samples = int(sr * 0.5)
     timeline_times = []
     timeline_anomaly = []
@@ -332,7 +324,7 @@ def generate_visualizations_with_xai(audio_data, sr, timeline_times, timeline_an
     fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 6.2), facecolor="#111827", gridspec_kw={'height_ratios': [1, 1.2, 0.8]})
     time_axis = np.linspace(0, len(audio_data) / sr, len(audio_data))
     
-    # 1. Waveform
+    # Waveform
     ax1.plot(time_axis, audio_data, color="#38BDF8", lw=0.8)
     ax1.set_facecolor("#111827")
     ax1.set_title("Time-Domain Acoustic Waveform", color="#F8FAFC", fontsize=9.5, fontweight="bold", pad=5)
@@ -340,7 +332,7 @@ def generate_visualizations_with_xai(audio_data, sr, timeline_times, timeline_an
     ax1.grid(True, color="#1E293B", linestyle="--", alpha=0.7)
     for spine in ax1.spines.values(): spine.set_color("#334155")
 
-    # 2. STFT Spectrogram
+    # STFT Spectrogram
     D = librosa.amplitude_to_db(np.abs(librosa.stft(audio_data, n_fft=1024, hop_length=512)), ref=np.max)
     librosa.display.specshow(D, sr=sr, hop_length=512, x_axis="time", y_axis="hz", ax=ax2, cmap="magma")
     ax2.set_facecolor("#111827")
@@ -348,7 +340,7 @@ def generate_visualizations_with_xai(audio_data, sr, timeline_times, timeline_an
     ax2.tick_params(colors="#94A3B8", labelsize=8)
     for spine in ax2.spines.values(): spine.set_color("#334155")
 
-    # 3. Explainable AI Temporal Anomaly Heatmap
+    # XAI Heatmap
     bar_color = "#EF4444" if is_fake else "#10B981"
     ax3.bar(timeline_times, timeline_anomaly, width=0.45, color=bar_color, alpha=0.85, edgecolor="#334155")
     ax3.axhline(0.5, color="#F59E0B", linestyle="--", lw=1.2, label="Spoof Decision Boundary (0.50)")
@@ -380,16 +372,20 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-with st.sidebar:
-    st.markdown("### ⚙️ Engine Calibration")
+# PROMINENT IN-PAGE CONTROL PANEL (Always visible on all screen sizes)
+st.markdown('<div class="control-box"><b>⚙️ Engine Calibration & Attack Vector Controls</b>', unsafe_allow_html=True)
+col_ctrl1, col_ctrl2, col_ctrl3 = st.columns([1, 1.5, 1])
+
+with col_ctrl1:
     selected_lang = st.selectbox(
         "Acoustic Context (Language)",
         ["Hindi", "Marathi", "Tamil", "Bengali"],
         help="Applies language-specific phonetic thresholds for retroflexes & aspirated consonants."
     )
-    
+
+with col_ctrl2:
     channel_simulation = st.selectbox(
-        "Transmission Channel Mode",
+        "Transmission Channel Mode (Attack Simulation)",
         [
             "Clean Studio Recording",
             "WhatsApp Voice Note (Opus 16kbps Simulation)",
@@ -398,18 +394,12 @@ with st.sidebar:
         ],
         help="Simulate how the detector handles heavily compressed WhatsApp audio or phone call scams."
     )
-    
+
+with col_ctrl3:
     sensitivity = st.slider("Spoof Decision Boundary", min_value=0.3, max_value=0.7, value=0.5, step=0.05)
-    
-    st.markdown("---")
-    st.markdown("### 🧬 Active Subsystems")
-    st.success("✅ Multi-Biomarker Engine: Active")
-    st.success("✅ Language Acoustic Matrix: Active")
-    st.success("✅ Real-World Degradation Sim: Active")
-    st.success("✅ Explainable AI (XAI) Heatmap: Active")
-    
-    lang_info = LANGUAGE_ACOUSTIC_PROFILES[selected_lang]
-    st.caption(f"**Phonetic Note ({selected_lang}):** {lang_info['note']}")
+
+lang_info = LANGUAGE_ACOUSTIC_PROFILES[selected_lang]
+st.markdown(f'<p style="font-size:0.8rem; color:#94A3B8; margin-top:6px; margin-bottom:0;"><b>Phonetic Tuning ({selected_lang}):</b> {lang_info["note"]}</p></div>', unsafe_allow_html=True)
 
 col_input, col_results = st.columns([1, 1], gap="large")
 
@@ -470,7 +460,6 @@ with col_results:
             st.markdown("<br>", unsafe_allow_html=True)
             st.progress(float(confidence))
 
-            # Forensic biomarker breakdown
             st.markdown("##### Forensic Biomarker Breakdown")
             c1, c2 = st.columns(2)
             with c1:
@@ -482,7 +471,6 @@ with col_results:
                 st.markdown(f'<div class="metric-card">Entropy Variance: <b>{features["entropy_std"]:.3f}</b></div>', unsafe_allow_html=True)
                 st.markdown(f'<div class="metric-card">F0 Standard Dev: <b>{features["pitch_std"]:.1f} Hz</b></div>', unsafe_allow_html=True)
 
-            # Explainable AI Diagnostic Notes
             if is_fake and features["xai_reasons"]:
                 st.markdown(f"""
                 <div class="xai-card">
