@@ -327,8 +327,10 @@ def process_audio_buffer(audio_bytes, channel_mode):
     else:
         data = data[:target_len]
         
-    data = apply_channel_degradation(data, sr, channel_mode)
-    return data.astype(np.float32), sr
+    raw_data = data.astype(np.float32)
+    # Apply channel degradation filter for channel simulation & visualization
+    display_data = apply_channel_degradation(raw_data, sr, channel_mode)
+    return raw_data, display_data, sr
 
 
 def generate_visualizations_with_xai(audio_data, sr, timeline_times, timeline_anomaly, is_fake):
@@ -439,10 +441,10 @@ with col_results:
     st.markdown("#### 2. Biometric Verification Result")
     if audio_bytes is not None:
         with st.spinner(f"Analyzing {selected_lang} speech across {channel_simulation}..."):
-            audio_data, sr = process_audio_buffer(audio_bytes, channel_simulation)
+            raw_audio, display_audio, sr = process_audio_buffer(audio_bytes, channel_simulation)
 
             is_fake, confidence, features = compute_speech_authenticity_xai(
-                audio_data, sr, sensitivity=sensitivity, lang=selected_lang, channel_mode=channel_simulation
+                raw_audio, sr, sensitivity=sensitivity, lang=selected_lang, channel_mode=channel_simulation
             )
 
             if is_fake:
@@ -498,7 +500,7 @@ if audio_bytes is not None:
     st.markdown("---")
     st.markdown("#### 📊 Acoustic Diagnostics & Temporal Anomaly Heatmap")
     fig = generate_visualizations_with_xai(
-        audio_data, sr, features["timeline_times"], features["timeline_anomaly"], is_fake
+        display_audio, sr, features["timeline_times"], features["timeline_anomaly"], is_fake
     )
     st.pyplot(fig, use_container_width=True)
 
