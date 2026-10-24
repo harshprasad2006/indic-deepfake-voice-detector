@@ -219,39 +219,83 @@ def compute_speech_authenticity_xai(audio_data, sr=16000, sensitivity=0.5, lang=
         hpr_th *= 1.25
         pitch_th *= 0.80
 
-    # ================= UNIFIED FORENSIC & BIOMETRIC SCORING ENGINE =================
+    # ================= CHANNEL-AWARE FORENSIC & BIOMETRIC SCORING ENGINE =================
     # Calibrated across Clean Studio, WhatsApp Opus, GSM Telephony, and Ambient Noise
     fake_votes = 0.0
     total_w = 10.0
     xai_reasons = []
 
-    # 1. Vocoder Phase Discontinuity (Entropy Variance) - Weight: 3.5
-    if entropy_std > 0.82:
-        fake_votes += 3.5
-        xai_reasons.append(f"Vocoder frame phase discontinuity detected (Entropy Var: {entropy_std:.3f} > 0.82).")
+    if "WhatsApp" in channel_mode:
+        # WhatsApp Opus compression: quantizes vocoder phase jumps, slight loss of high-end
+        if entropy_std > 0.85:
+            fake_votes += 3.5
+            xai_reasons.append(f"Vocoder frame phase discontinuity detected under Opus quantization (Entropy Var: {entropy_std:.3f}).")
+        if flatness > 0.005:
+            fake_votes += 2.5
+            xai_reasons.append(f"Synthetic vocoder spectral flatness detected (Flatness: {flatness:.4f}).")
+        if jitter < 2.5 or pitch_std < 15.0:
+            fake_votes += 2.5
+            xai_reasons.append(f"Monotonic robotic pitch track (Jitter: {jitter:.1f}Hz, F0 Std: {pitch_std:.1f}Hz).")
+        if hpr_ratio > 35.0:
+            fake_votes += 1.5
+            xai_reasons.append(f"Hyper-pure harmonic reconstruction (HPR: {hpr_ratio:.1f}).")
+        ch_offset = 0.024
 
-    # 2. Synthetic Vocoder Spectral Flatness - Weight: 2.5
-    if flatness > 0.006:
-        fake_votes += 2.5
-        xai_reasons.append(f"Synthetic vocoder spectral flatness detected (Flatness: {flatness:.4f} > 0.006).")
+    elif "Phone Call" in channel_mode:
+        # 8kHz GSM Telephony: 300-3400Hz bandpass cuts extreme frequencies
+        if entropy_std > 0.95 or (entropy_std > 0.80 and hpr_ratio > 50.0):
+            fake_votes += 3.5
+            xai_reasons.append(f"Phase discontinuity persistent through GSM 8kHz bandpass (Entropy Var: {entropy_std:.3f}).")
+        if flatness > 0.012 or (flatness > 0.006 and hpr_ratio > 50.0):
+            fake_votes += 2.5
+            xai_reasons.append(f"Synthetic vocoder noise floor in telephony band (Flatness: {flatness:.4f}).")
+        if jitter < 3.0 or pitch_std < 15.0:
+            fake_votes += 2.5
+            xai_reasons.append(f"Robotic pitch tracking under narrowband telephony filter (Jitter: {jitter:.1f}Hz).")
+        if hpr_ratio > 20.0:
+            fake_votes += 1.5
+            xai_reasons.append(f"Synthetic vocoder harmonic floor detected in PSTN voiceband (HPR: {hpr_ratio:.1f}).")
+        ch_offset = 0.048
 
-    # 3. Monotonic Pitch Track & Jitter - Weight: 2.5
-    if jitter < 2.5 or pitch_std < 15.0:
-        fake_votes += 2.5
-        xai_reasons.append(f"Monotonic robotic pitch track (Jitter: {jitter:.1f}Hz < 2.5, F0 Std: {pitch_std:.1f}Hz < 15.0).")
+    elif "Ambient" in channel_mode:
+        # Ambient Street & Room Noise: Noise floor injected into background
+        if entropy_std > 0.84:
+            fake_votes += 3.5
+            xai_reasons.append(f"Neural vocoder phase coherence persistent over ambient static noise (Entropy Var: {entropy_std:.3f}).")
+        if flatness > 0.007:
+            fake_votes += 2.5
+            xai_reasons.append(f"Synthetic vocoder spectral flatness over ambient room noise (Flatness: {flatness:.4f}).")
+        if jitter < 2.5 or pitch_std < 15.0:
+            fake_votes += 2.5
+            xai_reasons.append(f"Robotic pitch track persists despite ambient room reverberation (Jitter: {jitter:.1f}Hz).")
+        if hpr_ratio > 30.0:
+            fake_votes += 1.5
+            xai_reasons.append(f"Hyper-pure harmonic signature distinguishable from room noise (HPR: {hpr_ratio:.1f}).")
+        ch_offset = 0.033
 
-    # 4. Hyper-pure Harmonic Reconstruction (HPR) - Weight: 1.5
-    if hpr_ratio > 35.0:
-        fake_votes += 1.5
-        xai_reasons.append(f"Hyper-pure harmonic reconstruction (HPR: {hpr_ratio:.1f} > 35.0).")
+    else:
+        # Clean Studio Recording Mode (Optimal laboratory signal)
+        if entropy_std > 0.82:
+            fake_votes += 3.5
+            xai_reasons.append(f"Vocoder frame phase discontinuity detected (Entropy Var: {entropy_std:.3f} > 0.82).")
+        if flatness > 0.006:
+            fake_votes += 2.5
+            xai_reasons.append(f"Synthetic vocoder spectral flatness detected (Flatness: {flatness:.4f} > 0.006).")
+        if jitter < 2.5 or pitch_std < 15.0:
+            fake_votes += 2.5
+            xai_reasons.append(f"Monotonic robotic pitch track (Jitter: {jitter:.1f}Hz, F0 Std: {pitch_std:.1f}Hz).")
+        if hpr_ratio > 35.0:
+            fake_votes += 1.5
+            xai_reasons.append(f"Hyper-pure harmonic reconstruction (HPR: {hpr_ratio:.1f} > 35.0).")
+        ch_offset = 0.0
 
     fake_prob = fake_votes / total_w
     is_fake = fake_prob >= sensitivity
 
     if is_fake:
-        confidence = float(np.clip(0.88 + (fake_prob - sensitivity) * 0.22, 0.88, 0.99))
+        confidence = float(np.clip(0.965 + (fake_prob - sensitivity) * 0.06 - ch_offset, 0.87, 0.99))
     else:
-        confidence = float(np.clip(0.88 + (sensitivity - fake_prob) * 0.22, 0.88, 0.99))
+        confidence = float(np.clip(0.985 + (sensitivity - fake_prob) * 0.03 - ch_offset, 0.89, 0.99))
 
     # Temporal Anomaly Heatmap
     window_samples = int(sr * 0.5)
@@ -415,7 +459,7 @@ with col_results:
             raw_audio, display_audio, sr = process_audio_buffer(audio_bytes, channel_simulation)
 
             is_fake, confidence, features = compute_speech_authenticity_xai(
-                raw_audio, sr, sensitivity=sensitivity, lang=selected_lang, channel_mode=channel_simulation
+                display_audio, sr, sensitivity=sensitivity, lang=selected_lang, channel_mode=channel_simulation
             )
 
             if is_fake:
